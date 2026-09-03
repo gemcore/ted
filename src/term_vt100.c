@@ -179,9 +179,8 @@ void TERM_render(TERM *t, const ED_Doc *doc, const ED_View *view,
                     disp++;
                 }
             }
-        } else if (ED_line_count(doc) == 1 && ED_line_len(doc, 0) == 0 &&
-                   drow > last) {
-            TERM_write_n(t, "~", 1);    /* empty buffer filler */
+        } else {
+            TERM_write_n(t, "~", 1);    /* past end of document */
         }
         if (row + 1 < text_rows) {
             TERM_write_n(t, "\r\n", 2);
