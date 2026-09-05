@@ -18,8 +18,7 @@
 #define EDITOR_MAX_LINES        256
 #endif
 
-/* Default terminal size. The host/Zephyr backend may report the real
- * size via TERM_set_size(); these are safe fallbacks for serial consoles. */
+/* Default terminal size; safe fallbacks for serial consoles. */
 #ifndef EDITOR_TERM_COLS
 #define EDITOR_TERM_COLS        80
 #endif

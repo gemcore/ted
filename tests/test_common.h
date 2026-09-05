@@ -5,6 +5,7 @@
 #define TEST_COMMON_H
 
 #include <stdio.h>
+#include <string.h>
 
 static int test_checks = 0;
 static int test_failures = 0;

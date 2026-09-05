@@ -31,22 +31,19 @@ FS_LFS_Result FS_LFS_load(const char *path, char *buf, size_t cap,
     if (rc != 0) {
         return FS_LFS_IO;
     }
-    if ((size_t)entry.size > cap) {
-        return FS_LFS_TOO_LARGE;
-    }
-
     fs_file_t_init(&file);
     rc = fs_open(&file, path, FS_O_READ);
     if (rc != 0) {
         return FS_LFS_IO;
     }
-    got = fs_read(&file, buf, (size_t)entry.size);
+    got = fs_read(&file, buf, (size_t)entry.size > cap ? cap :
+                  (size_t)entry.size);
     fs_close(&file);
     if (got < 0) {
         return FS_LFS_IO;
     }
     *len = (size_t)got;
-    return FS_LFS_OK;
+    return ((size_t)entry.size > cap) ? FS_LFS_TOO_LARGE : FS_LFS_OK;
 }
 
 FS_LFS_Result FS_LFS_save(const char *path, const char *buf, size_t len)
@@ -97,14 +94,13 @@ FS_LFS_Result FS_LFS_load(const char *path, char *buf, size_t cap,
         fclose(fp);
         return FS_LFS_IO;
     }
-    if ((size_t)size > cap) {
-        fclose(fp);
-        return FS_LFS_TOO_LARGE;
-    }
-    got = fread(buf, 1, (size_t)size, fp);
+    got = fread(buf, 1, (size_t)size > cap ? cap : (size_t)size, fp);
     fclose(fp);
     *len = got;
-    return FS_LFS_OK;
+    if (got != ((size_t)size > cap ? cap : (size_t)size)) {
+        return FS_LFS_IO;
+    }
+    return ((size_t)size > cap) ? FS_LFS_TOO_LARGE : FS_LFS_OK;
 }
 
 FS_LFS_Result FS_LFS_save(const char *path, const char *buf, size_t len)

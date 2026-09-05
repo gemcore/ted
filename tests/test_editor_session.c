@@ -144,6 +144,7 @@ int main(void)
         setup_script("\x11", 1);
         cfg_for(path);
         CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
+        CHECK(strstr(out, "xxxx") != NULL);
         CHECK(strstr(out, "zzzz") == NULL);
     }
 
