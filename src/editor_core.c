@@ -87,27 +87,21 @@ static ED_Result ed_insert(ED_Doc *doc, const char *data, size_t n)
     doc->len += n;
 
     if (newlines > 0) {
-        size_t add[16]; /* index entries for new line starts, batched */
-        size_t cnt = 0;
         size_t base = doc->cur;
-        size_t pos;
 
         row = ed_cur_row(doc);
+        memmove(doc->lines + row + 1 + newlines, doc->lines + row + 1,
+                (doc->line_count - (row + 1)) * sizeof(size_t));
+        for (i = row + 1 + newlines; i < doc->line_count + newlines; i++) {
+            doc->lines[i] += n;
+        }
         for (i = 0; i < n; i++) {
             if (doc->buf[base + i] == '\n') {
-                if (cnt < sizeof(add) / sizeof(add[0])) {
-                    add[cnt++] = base + i + 1;
-                }
+                doc->lines[row + 1] = base + i + 1;
+                row++;
             }
         }
-        /* Shift existing entries after row and insert the new ones. */
-        memmove(doc->lines + row + 1 + cnt, doc->lines + row + 1,
-                (doc->line_count - (row + 1)) * sizeof(size_t));
-        for (i = 0; i < cnt; i++) {
-            doc->lines[row + 1 + i] = add[i];
-        }
-        doc->line_count += cnt;
-        (void)pos;
+        doc->line_count += newlines;
     } else {
         /* Shift line starts after the cursor. */
         row = ed_cur_row(doc);

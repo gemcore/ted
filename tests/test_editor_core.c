@@ -7,7 +7,7 @@
 #include "test_common.h"
 
 #define CAP   64
-#define LINES 8
+#define LINES 32
 
 static char   buf[CAP];
 static size_t lines[LINES];
@@ -221,6 +221,21 @@ static void test_insert_text(void)
     check_cursor(1, 3);
 }
 
+static void test_insert_many_newlines_before_existing_lines(void)
+{
+    static const char newlines[] =
+        "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n";
+
+    setup_text("one\ntwo\nthree");
+    ED_cursor_end(&doc);
+    CHECK(ED_insert_text(&doc, newlines, sizeof(newlines) - 1) == ED_OK);
+    CHECK(ED_line_count(&doc) == 20);
+    CHECK(ED_line_len(&doc, 18) == 3);
+    CHECK(memcmp(ED_line_text(&doc, 18), "two", 3) == 0);
+    CHECK(ED_line_len(&doc, 19) == 5);
+    CHECK(memcmp(ED_line_text(&doc, 19), "three", 5) == 0);
+}
+
 static void test_clear_dirty(void)
 {
     setup_text("x");
@@ -250,6 +265,7 @@ int main(void)
     test_home_end();
     test_page_movement();
     test_insert_text();
+    test_insert_many_newlines_before_existing_lines();
     test_clear_dirty();
     TEST_SUMMARY();
 }
