@@ -25,6 +25,9 @@ int main(void)
     EDV_init(&view, 0, 0);
     CHECK(view.rows == EDITOR_TERM_ROWS);
     CHECK(view.cols == EDITOR_TERM_COLS);
+    EDV_init(&view, 1, 20);
+    CHECK(view.rows == 2);
+    CHECK(EDV_text_rows(&view) == 1);
 
     setup("a\nb\nc\nd\ne\nf", 5, 20);
     CHECK(EDV_text_rows(&view) == 4);   /* one row reserved for status */
@@ -92,6 +95,7 @@ int main(void)
 
     /* Rows/cols of 0 or 1 are clamped to something usable. */
     EDV_set_size(&view, 1, 0);
+    CHECK(view.rows == 2);
     CHECK(EDV_text_rows(&view) == 1);
     CHECK(EDV_text_cols(&view) == 1);
 

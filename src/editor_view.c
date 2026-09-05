@@ -13,7 +13,7 @@ void EDV_init(ED_View *v, size_t rows, size_t cols)
     if (v == NULL) {
         return;
     }
-    v->rows = (rows == 0) ? EDITOR_TERM_ROWS : rows;
+    v->rows = (rows == 0) ? EDITOR_TERM_ROWS : (rows < 2) ? 2 : rows;
     v->cols = (cols == 0) ? EDITOR_TERM_COLS : cols;
     v->top = 0;
     v->left = 0;
@@ -24,7 +24,7 @@ void EDV_set_size(ED_View *v, size_t rows, size_t cols)
     if (v == NULL) {
         return;
     }
-    v->rows = (rows == 0) ? 1 : rows;
+    v->rows = (rows < 2) ? 2 : rows;
     v->cols = (cols == 0) ? 1 : cols;
 }
 

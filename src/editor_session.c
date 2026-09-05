@@ -120,7 +120,7 @@ ED_SessionResult ED_Session_run(const ED_SessionConfig *cfg)
         break;
     case FS_LFS_TOO_LARGE:
         msg = "file truncated";         /* buffer holds what fits */
-        ED_set_text(&doc, cfg->buf, cfg->buf_cap);
+        ED_set_text(&doc, cfg->buf, loaded_len);
         break;
     default:
         return ED_SESSION_IO_ERROR;

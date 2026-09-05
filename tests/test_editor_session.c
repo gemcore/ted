@@ -134,6 +134,19 @@ int main(void)
     CHECK(strstr(out, "\x1b[7m") != NULL);       /* status bar */
     CHECK(strstr(out, path) != NULL);            /* file name shown */
 
+    /* An oversized file must not render stale caller buffer contents. */
+    {
+        char oversized[CAP + 1];
+
+        memset(oversized, 'x', sizeof(oversized));
+        write_file(path, oversized);
+        memset(buf, 'z', sizeof(buf));
+        setup_script("\x11", 1);
+        cfg_for(path);
+        CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
+        CHECK(strstr(out, "zzzz") == NULL);
+    }
+
     /* Input stream ending without Ctrl-Q still exits cleanly. */
     write_file(path, "x");
     setup_script("", 0);
