@@ -9,6 +9,7 @@
 
 #ifdef __ZEPHYR__
 
+#include <errno.h>
 #include <zephyr/fs/fs.h>
 
 FS_LFS_Result FS_LFS_load(const char *path, char *buf, size_t cap,

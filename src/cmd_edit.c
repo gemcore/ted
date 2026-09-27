@@ -46,47 +46,113 @@ int Cmd_edit(TERM *term, int argc, char *argv[])
 
 #ifdef __ZEPHYR__
 
+#include <errno.h>
+#include <string.h>
+#include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
+#include <zephyr/sys/atomic.h>
 
-/* Zephyr shell backend I/O: characters typed at the shell arrive via the
- * shell's receive handler while the editor owns the screen. Output uses
- * shell_fprintf so it works on any shell backend (UART, RTT, ...). */
+#ifndef EDITOR_THREAD_STACK_SIZE
+#define EDITOR_THREAD_STACK_SIZE 4096
+#endif
+
+#ifndef EDITOR_THREAD_PRIORITY
+#define EDITOR_THREAD_PRIORITY   K_LOWEST_APPLICATION_THREAD_PRIO
+#endif
+
+#ifndef EDITOR_PATH_MAX
+#define EDITOR_PATH_MAX          64
+#endif
+
+#ifndef EDITOR_RX_QUEUE_LEN
+#define EDITOR_RX_QUEUE_LEN      64
+#endif
+
+/* The editor runs in its own thread; the shell forwards raw input bytes to
+ * it through the bypass callback while the editor owns the screen. */
+K_THREAD_STACK_DEFINE(s_ed_stack, EDITOR_THREAD_STACK_SIZE);
+K_MSGQ_DEFINE(s_rx_q, sizeof(uint8_t), EDITOR_RX_QUEUE_LEN, 1);
+
+static struct k_thread s_ed_thread;
+static atomic_t s_busy;
 static const struct shell *s_shell;
+static char s_path[EDITOR_PATH_MAX];
+
+static void editor_bypass(const struct shell *sh, uint8_t *data, size_t len)
+{
+    size_t i;
+
+    ARG_UNUSED(sh);
+    for (i = 0; i < len; i++) {
+        (void)k_msgq_put(&s_rx_q, &data[i], K_NO_WAIT);
+    }
+}
 
 static size_t zephyr_term_write(void *ctx, const char *data, size_t len)
 {
-    const struct shell *sh = (ctx != NULL) ? (const struct shell *)ctx : s_shell;
-    size_t i;
-
-    for (i = 0; i < len; i++) {
-        shell_fprintf(sh, SHELL_NORMAL, "%c", data[i]);
-    }
+    shell_fprintf((const struct shell *)ctx, SHELL_NORMAL, "%.*s", (int)len,
+                  data);
     return len;
 }
 
 static int zephyr_term_read(void *ctx)
 {
-    /* The Zephyr shell consumes input bytes itself; a production build
-     * should register a raw receive callback (e.g. via the UART backend
-     * or a dedicated input thread) and feed this from a ring buffer.
-     * The editor architecture keeps this behind TERM_ReadFn so only this
-     * one function needs platform work. */
-    (void)ctx;
-    return -1;
+    uint8_t c;
+
+    ARG_UNUSED(ctx);
+    if (k_msgq_get(&s_rx_q, &c, K_FOREVER) != 0) {
+        return -1;
+    }
+    return c;
+}
+
+static void editor_thread(void *p1, void *p2, void *p3)
+{
+    const struct shell *sh = s_shell;
+    char *argv[] = { "edit", s_path, NULL };
+    TERM term;
+    int rc;
+
+    ARG_UNUSED(p1);
+    ARG_UNUSED(p2);
+    ARG_UNUSED(p3);
+
+    TERM_init(&term, zephyr_term_write, zephyr_term_read, (void *)sh);
+    rc = Cmd_edit(&term, 2, argv);
+
+    shell_set_bypass(sh, NULL);
+    if (rc != 0) {
+        shell_error(sh, "edit: failed (%d)", rc);
+    }
+    atomic_clear(&s_busy);
 }
 
 static int cmd_edit_zephyr(const struct shell *sh, size_t argc, char **argv)
 {
-    TERM term;
-
     if (argc < 2) {
         shell_error(sh, "usage: edit <file>");
         return -EINVAL;
     }
+    if (strlen(argv[1]) >= sizeof(s_path)) {
+        shell_error(sh, "edit: path too long");
+        return -ENAMETOOLONG;
+    }
+    if (!atomic_cas(&s_busy, 0, 1)) {
+        shell_error(sh, "edit: editor already running");
+        return -EBUSY;
+    }
 
+    strcpy(s_path, argv[1]);
     s_shell = sh;
-    TERM_init(&term, zephyr_term_write, zephyr_term_read, (void *)sh);
-    return Cmd_edit(&term, (int)argc, argv);
+    k_msgq_purge(&s_rx_q);
+    shell_set_bypass(sh, editor_bypass);
+
+    /* Delay start so the shell finishes printing its prompt before the first redraw. */
+    k_thread_create(&s_ed_thread, s_ed_stack, K_THREAD_STACK_SIZEOF(s_ed_stack),
+                    editor_thread, NULL, NULL, NULL,
+                    EDITOR_THREAD_PRIORITY, 0, K_MSEC(50));
+    k_thread_name_set(&s_ed_thread, "ted");
+    return 0;
 }
 
 SHELL_CMD_ARG_REGISTER(edit, NULL, "edit a file: edit <file>",
