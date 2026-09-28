@@ -47,22 +47,44 @@ Data flow:
 | Arrows         | move cursor             |
 | Home/End       | line start/end          |
 | PgUp/PgDn      | move by a page          |
-| Ctrl-S         | save                    |
-| Ctrl-Q         | quit                    |
+| Ctrl-W         | write to file           | 
+| Ctrl-X         | exit                    |
+
+**Terminal settings:** use an Xterm (or VT220) emulation. Plain VT100
+emulation has no Home/End keys, so terminals such as SecureCRT send nothing
+for them in that mode. Write/exit use Ctrl-W/Ctrl-X so they are not swallowed by XON/XOFF flow control.
 
 ## Zephyr porting
 
 The modules are organized so a Zephyr port only has to provide the edges:
 
-- **Terminal**: wire `TERM_WriteFn`/`TERM_ReadFn` to the shell/UART.
-  `cmd_edit.c` already registers `edit` with the Zephyr shell
-  (`SHELL_CMD_ARG_REGISTER`) and writes through `shell_fprintf` when built
-  with `__ZEPHYR__`; input needs a raw byte source (e.g. a UART receive
-  ring buffer) because the Zephyr shell normally consumes typed bytes.
-- **Filesystem**: `fs_lfs.c` uses `<zephyr/fs/fs.h>` under `__ZEPHYR__`;
-  mount LittleFS and pass paths such as `/lfs/notes.txt`.
+- **Terminal**: `cmd_edit.c` registers `edit` with the Zephyr shell
+  (`SHELL_CMD_ARG_REGISTER`) and runs the editor in its own thread
+  (`ted`). While the editor is open, `shell_set_bypass()` routes raw input
+  bytes to a message queue that feeds `TERM_ReadFn`; output goes through
+  `shell_fprintf`. On quit the bypass is removed (press Enter to redraw
+  the shell prompt). Thread stack, priority, path length and input queue
+  depth are set by `EDITOR_THREAD_STACK_SIZE`, `EDITOR_THREAD_PRIORITY`,
+  `EDITOR_PATH_MAX` and `EDITOR_RX_QUEUE_LEN`.
+- **Filesystem**: `fs_lfs.c` uses `<zephyr/fs/fs.h>` under `__ZEPHYR__`.
+  `app/main.c` mounts LittleFS at `/lfs` on the `littlefs_storage`
+  partition, so pass paths such as `/lfs/notes.txt`.
 - **Sizing**: override `EDITOR_MAX_BYTES` / `EDITOR_MAX_LINES` at build
   time to fit the target's RAM budget.
+
+### Building for nRF Connect SDK
+
+The repository root is a Zephyr application (`CMakeLists.txt`, `prj.conf`,
+`app/main.c`), tested with NCS v3.2.4:
+
+```sh
+west build -p -b nrf52840dk/nrf52840 .
+west flash
+```
+
+Then run `edit /lfs/notes.txt` at the shell prompt. `prj.conf` sets
+`CONFIG_MAIN_STACK_SIZE=2048` because mounting (and first-time formatting)
+LittleFS in `main()` overflows the default 1 KB main stack.
 
 No part of the new code uses `GetStdHandle`, `PeekConsoleInput`,
 `ReadConsoleInput`, `SetConsoleMode`, or any other Windows console API.

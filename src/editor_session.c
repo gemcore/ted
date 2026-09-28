@@ -7,7 +7,7 @@
  *   Enter            split line     Delete     delete at cursor
  *   Tab              insert spaces  arrows     move cursor
  *   Home/End         line start/end PgUp/PgDn  move by a page
- *   Ctrl-S           save           Ctrl-Q     quit
+ *   Ctrl-W           write          Ctrl-X     exit
  */
 #include <stdio.h>
 
@@ -21,7 +21,7 @@ static void set_status(char *status, size_t cap, const char *path,
     size_t row, col;
 
     ED_get_cursor(doc, &row, &col);
-    snprintf(status, cap, "%s%s | Ln %zu, Col %zu | ^S save ^Q quit%s%s",
+    snprintf(status, cap, "%s%s | Ln %zu, Col %zu | ^W save ^X quit%s%s",
              path != NULL ? path : "(no name)",
              ED_is_dirty(doc) ? " [+]" : "",
              row + 1, col + 1,
@@ -73,13 +73,13 @@ static const char *apply_key(ED_Doc *doc, ED_View *view,
     case TERM_KEY_PAGE_DOWN:
         ED_move_page_down(doc, EDV_text_rows(view));
         break;
-    case TERM_KEY_CTRL_S:
+    case TERM_KEY_CTRL_W:
         if (FS_LFS_save(path, doc->buf, ED_get_text(doc)) == FS_LFS_OK) {
             ED_clear_dirty(doc);
             return "saved";
         }
         return "save failed";
-    case TERM_KEY_CTRL_Q:
+    case TERM_KEY_CTRL_X:
         *quit = true;
         break;
     case TERM_KEY_NONE:

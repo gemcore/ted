@@ -35,8 +35,8 @@ typedef enum {
     TERM_KEY_END,
     TERM_KEY_PAGE_UP,
     TERM_KEY_PAGE_DOWN,
-    TERM_KEY_CTRL_S,     /* save */
-    TERM_KEY_CTRL_Q      /* quit */
+    TERM_KEY_CTRL_W,     /* write */
+    TERM_KEY_CTRL_X      /* exit */
 } TERM_KeyType;
 
 typedef struct {

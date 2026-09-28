@@ -276,7 +276,7 @@ extern "C"
 			}
 		}
 		PrintStatusLine("Press any key to exit", Size);
-		ch = CON_getc(); #endif
+		ch = CON_getc(); 
 #endif
 			return 0;
 	}

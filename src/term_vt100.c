@@ -314,11 +314,11 @@ bool TERM_feed_byte(TERM *t, int byte, TERM_Key *key)
     case '\t':
         key_simple(key, TERM_KEY_TAB);
         return true;
-    case 0x13:  /* Ctrl-S */
-        key_simple(key, TERM_KEY_CTRL_S);
+    case 0x17:  /* Ctrl-W */
+        key_simple(key, TERM_KEY_CTRL_W);
         return true;
-    case 0x11:  /* Ctrl-Q */
-        key_simple(key, TERM_KEY_CTRL_Q);
+    case 0x18:  /* Ctrl-X */
+        key_simple(key, TERM_KEY_CTRL_X);
         return true;
     default:
         if (byte >= 32 && byte <= 126) {
