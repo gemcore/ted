@@ -79,6 +79,11 @@ void TERM_normal_video(TERM *t);
 void TERM_render(TERM *t, const ED_Doc *doc, const ED_View *view,
                  const char *status);
 
+/* Partial redraw: status line and cursor only. Valid when the text area
+ * on screen still matches doc/view (e.g. cursor moved within the page). */
+void TERM_render_cursor(TERM *t, const ED_Doc *doc, const ED_View *view,
+                        const char *status);
+
 /* Blocking read of one decoded key. Unrecognised bytes are consumed and
  * reported as TERM_KEY_NONE. Returns false only if read is unavailable
  * or the stream ended. */

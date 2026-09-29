@@ -21,12 +21,30 @@ static void set_status(char *status, size_t cap, const char *path,
     size_t row, col;
 
     ED_get_cursor(doc, &row, &col);
-    snprintf(status, cap, "%s%s | Ln %zu, Col %zu | ^W save ^X quit%s%s",
+    snprintf(status, cap, "%s%s | Ln %zu, Col %zu | ^W write ^X exit%s%s",
              path != NULL ? path : "(no name)",
              ED_is_dirty(doc) ? " [+]" : "",
              row + 1, col + 1,
              msg != NULL ? " | " : "",
              msg != NULL ? msg : "");
+}
+
+/* Keys that only move the cursor and never change the text. */
+static bool is_motion_key(TERM_KeyType type)
+{
+    switch (type) {
+    case TERM_KEY_UP:
+    case TERM_KEY_DOWN:
+    case TERM_KEY_LEFT:
+    case TERM_KEY_RIGHT:
+    case TERM_KEY_HOME:
+    case TERM_KEY_END:
+    case TERM_KEY_PAGE_UP:
+    case TERM_KEY_PAGE_DOWN:
+        return true;
+    default:
+        return false;
+    }
 }
 
 /* Apply one editing key. Returns the message to show in the status line
@@ -95,6 +113,7 @@ ED_SessionResult ED_Session_run(const ED_SessionConfig *cfg)
     ED_View view;
     TERM_Key key;
     bool quit = false;
+    bool full_redraw = true;
     char status[EDITOR_STATUS_MAX];
     const char *msg = NULL;
     size_t loaded_len = 0;
@@ -129,17 +148,25 @@ ED_SessionResult ED_Session_run(const ED_SessionConfig *cfg)
     TERM_enter(cfg->term);
 
     while (!quit) {
+        size_t old_top = view.top, old_left = view.left;
+
         EDV_ensure_cursor_visible(&view, &doc);
         set_status(status, sizeof(status), cfg->path, &doc, msg);
-        TERM_render(cfg->term, &doc, &view, status);
+        if (full_redraw || view.top != old_top || view.left != old_left) {
+            TERM_render(cfg->term, &doc, &view, status);
+        } else {
+            TERM_render_cursor(cfg->term, &doc, &view, status);
+        }
 
         msg = NULL;
         if (!TERM_read_key(cfg->term, &key)) {
             break;  /* input stream ended: leave the editor */
         }
         if (key.type == TERM_KEY_NONE) {
+            full_redraw = false;
             continue;
         }
+        full_redraw = !is_motion_key(key.type);
         msg = apply_key(&doc, &view, &key, cfg->path, &quit);
     }
 
