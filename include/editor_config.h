@@ -42,4 +42,9 @@
 #define EDITOR_STATUS_MAX       96
 #endif
 
+/* Longest file path, including the terminator. */
+#ifndef EDITOR_PATH_MAX
+#define EDITOR_PATH_MAX         64
+#endif
+
 #endif /* EDITOR_CONFIG_H */

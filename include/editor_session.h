@@ -27,7 +27,7 @@ typedef enum {
 } ED_SessionResult;
 
 typedef struct {
-    const char *path;                 /* file to edit (required) */
+    const char *path;                 /* file to edit, NULL = unnamed */
     TERM       *term;                 /* initialised terminal (required) */
     char       *buf;                  /* text storage (required) */
     size_t      buf_cap;

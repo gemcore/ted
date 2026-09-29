@@ -133,6 +133,9 @@ static char term_display_glyph(char ch)
     return EDITOR_UNPRINTABLE_GLYPH;
 }
 
+static void term_render_status_cursor(TERM *t, const ED_Doc *doc,
+                                      const ED_View *view, const char *status);
+
 void TERM_render(TERM *t, const ED_Doc *doc, const ED_View *view,
                  const char *status)
 {
@@ -187,8 +190,26 @@ void TERM_render(TERM *t, const ED_Doc *doc, const ED_View *view,
         }
     }
 
+    term_render_status_cursor(t, doc, view, status);
+}
+
+void TERM_render_cursor(TERM *t, const ED_Doc *doc, const ED_View *view,
+                        const char *status)
+{
+    if (t == NULL || doc == NULL || view == NULL) {
+        return;
+    }
+    TERM_hide_cursor(t);
+    term_render_status_cursor(t, doc, view, status);
+}
+
+static void term_render_status_cursor(TERM *t, const ED_Doc *doc,
+                                      const ED_View *view, const char *status)
+{
+    size_t cols = EDV_text_cols(view);
+
     /* Status line on the last terminal row, reverse video. */
-    TERM_move_to(t, text_rows, 0);
+    TERM_move_to(t, EDV_text_rows(view), 0);
     TERM_reverse_video(t);
     if (status != NULL) {
         size_t shown = 0;
@@ -314,11 +335,14 @@ bool TERM_feed_byte(TERM *t, int byte, TERM_Key *key)
     case '\t':
         key_simple(key, TERM_KEY_TAB);
         return true;
-    case 0x13:  /* Ctrl-S */
-        key_simple(key, TERM_KEY_CTRL_S);
+    case 0x17:  /* Ctrl-W */
+        key_simple(key, TERM_KEY_CTRL_W);
         return true;
-    case 0x11:  /* Ctrl-Q */
-        key_simple(key, TERM_KEY_CTRL_Q);
+    case 0x18:  /* Ctrl-X */
+        key_simple(key, TERM_KEY_CTRL_X);
+        return true;
+    case 0x03:  /* Ctrl-C */
+        key_simple(key, TERM_KEY_CTRL_C);
         return true;
     default:
         if (byte >= 32 && byte <= 126) {

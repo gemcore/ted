@@ -98,14 +98,14 @@ int main(void)
 
     /* Type "Hi", save, quit: file must contain the typed text. */
     remove(path);
-    setup_script("Hi\x13\x11", 4);
+    setup_script("Hi\x17\x18", 4);
     cfg_for(path);
     CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
     CHECK_STR(read_file(path, filebuf, sizeof(filebuf)), "Hi");
 
     /* Quit without saving discards changes. */
     write_file(path, "keep");
-    setup_script("X\x11", 2);
+    setup_script("X\x18n\r", 4);
     cfg_for(path);
     CHECK(ED_Session_run(&cfg) == ED_SESSION_DISCARDED);
     CHECK_STR(read_file(path, filebuf, sizeof(filebuf)), "keep");
@@ -113,21 +113,21 @@ int main(void)
     /* Editing an existing file and saving persists the edit. */
     write_file(path, "ab\ncd\n");
     /* End of line 0, Enter, 'Z', save, quit. */
-    setup_script("\x1b[F" "\r" "Z" "\x13\x11", 7);
+    setup_script("\x1b[F" "\r" "Z" "\x17\x18", 7);
     cfg_for(path);
     CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
     CHECK_STR(read_file(path, filebuf, sizeof(filebuf)), "ab\nZ\ncd\n");
 
     /* Backspace at line start joins lines. */
     write_file(path, "ab\ncd");
-    setup_script("\x1b[B" "\x7f" "\x13\x11", 6);
+    setup_script("\x1b[B" "\x7f" "\x17\x18", 6);
     cfg_for(path);
     CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
     CHECK_STR(read_file(path, filebuf, sizeof(filebuf)), "abcd");
 
     /* Output uses VT100 sequences and shows a status line. */
     write_file(path, "x");
-    setup_script("\x11", 1);
+    setup_script("\x18", 1);
     cfg_for(path);
     CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
     CHECK(strstr(out, "\x1b[?1049h") != NULL);   /* alternate screen */
@@ -141,14 +141,14 @@ int main(void)
         memset(oversized, 'x', sizeof(oversized));
         write_file(path, oversized);
         memset(buf, 'z', sizeof(buf));
-        setup_script("\x11", 1);
+        setup_script("\x18", 1);
         cfg_for(path);
         CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
         CHECK(strstr(out, "xxxx") != NULL);
         CHECK(strstr(out, "zzzz") == NULL);
     }
 
-    /* Input stream ending without Ctrl-Q still exits cleanly. */
+    /* Input stream ending without Ctrl-X still exits cleanly. */
     write_file(path, "x");
     setup_script("", 0);
     cfg_for(path);
@@ -163,6 +163,33 @@ int main(void)
         bad.buf = NULL;
         CHECK(ED_Session_run(&bad) == ED_SESSION_ARG_ERROR);
     }
+
+    /* Unnamed buffer: Ctrl-W asks for a name, then saves there. */
+    remove(path);
+    {
+        static const char keys[] = "Hi\x17/tmp/ted_session_test.txt\r\x18";
+
+        setup_script(keys, sizeof(keys) - 1);
+        cfg_for(NULL);
+        CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
+        CHECK_STR(read_file(path, filebuf, sizeof(filebuf)), "Hi");
+        CHECK(strstr(out, "Write to: ") != NULL);
+    }
+
+    /* Exit with changes: Ctrl-C cancels, 'y' saves and exits. */
+    write_file(path, "a");
+    setup_script("b\x18\x03\x18y\r", 6);
+    cfg_for(path);
+    CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
+    CHECK_STR(read_file(path, filebuf, sizeof(filebuf)), "ba");
+
+    /* Unnamed buffer: 'y' on exit asks for a name; empty Enter is ignored,
+     * Ctrl-C cancels. */
+    remove(path);
+    setup_script("Q\x18y\r\r\x03", 6);
+    cfg_for(NULL);
+    CHECK(ED_Session_run(&cfg) == ED_SESSION_DISCARDED);
+    CHECK(read_file(path, filebuf, sizeof(filebuf))[0] == '\0');
 
     remove(path);
     TEST_SUMMARY();

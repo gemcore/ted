@@ -35,8 +35,9 @@ typedef enum {
     TERM_KEY_END,
     TERM_KEY_PAGE_UP,
     TERM_KEY_PAGE_DOWN,
-    TERM_KEY_CTRL_S,     /* save */
-    TERM_KEY_CTRL_Q      /* quit */
+    TERM_KEY_CTRL_W,     /* write */
+    TERM_KEY_CTRL_X,     /* exit */
+    TERM_KEY_CTRL_C      /* cancel prompt */
 } TERM_KeyType;
 
 typedef struct {
@@ -78,6 +79,11 @@ void TERM_normal_video(TERM *t);
  * status line on the last row, then cursor placement. */
 void TERM_render(TERM *t, const ED_Doc *doc, const ED_View *view,
                  const char *status);
+
+/* Partial redraw: status line and cursor only. Valid when the text area
+ * on screen still matches doc/view (e.g. cursor moved within the page). */
+void TERM_render_cursor(TERM *t, const ED_Doc *doc, const ED_View *view,
+                        const char *status);
 
 /* Blocking read of one decoded key. Unrecognised bytes are consumed and
  * reported as TERM_KEY_NONE. Returns false only if read is unavailable

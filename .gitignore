@@ -268,3 +268,5 @@ DFU\.rar
 # Misc
 capture.out
 build/
+
+*.jpg
