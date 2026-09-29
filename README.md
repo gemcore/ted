@@ -15,13 +15,14 @@ caller-provided static storage sized by `editor_config.h`.
 ```
 include/  src/
   editor_config.h     Compile-time limits (max bytes/lines, screen size)
-  editor_core.[ch]    Text buffer, cursor, insert/delete/split/join.
+  editor_core.[ch]    Cursor and editing operations over a document store.
                       Platform-neutral and unit testable.
+  editor_store.[ch]   Bounded piece table, page cache and sparse line anchors.
   editor_view.[ch]    Viewport/scroll state and visible-window math.
   term_vt100.[ch]     VT100 rendering and raw-byte key decoding via
                       pluggable read/write callbacks (no OS calls).
-  fs_lfs.[ch]         File load/save wrapper: Zephyr fs API (LittleFS)
-                      under __ZEPHYR__, stdio on host builds.
+  fs_lfs.[ch]         Random-access reads and streamed replacement saves:
+                      Zephyr fs API (LittleFS) or stdio on host builds.
   editor_session.[ch] Event loop tying core/view/terminal/fs together:
                       load, draw, read key, apply action, save, quit.
   cmd_edit.[ch]       Shell command entry point: `edit [file]`.
@@ -30,10 +31,10 @@ include/  src/
 Data flow:
 
 ```
- open   cmd_edit -> editor_session -> fs_lfs -> editor_core
+ open   cmd_edit -> editor_session -> fs_lfs -> editor_store
  render editor_session -> editor_view -> term_vt100
  input  term_vt100 (key decode) -> editor_session -> editor_core
- save   editor_session -> editor_core buffer -> fs_lfs
+ save   editor_session -> editor_store pieces -> fs_lfs
 ```
 
 ## Key bindings
@@ -61,11 +62,6 @@ emulation has no Home/End keys, so terminals such as SecureCRT send nothing
 for them in that mode. Also disable XON/XOFF flow control, otherwise the
 terminal swallows Ctrl-S and Ctrl-Q.
 
-**Terminal settings:** use an Xterm (or VT220) emulation. Plain VT100
-emulation has no Home/End keys, so terminals such as SecureCRT send nothing
-for them in that mode. Also disable XON/XOFF flow control, otherwise the
-terminal swallows Ctrl-S and Ctrl-Q.
-
 ## Zephyr porting
 
 The modules are organized so a Zephyr port only has to provide the edges:
@@ -81,8 +77,19 @@ The modules are organized so a Zephyr port only has to provide the edges:
 - **Filesystem**: `fs_lfs.c` uses `<zephyr/fs/fs.h>` under `__ZEPHYR__`.
   `app/main.c` mounts LittleFS at `/lfs` on the `littlefs_storage`
   partition, so pass paths such as `/lfs/notes.txt`.
-- **Sizing**: override `EDITOR_MAX_BYTES` / `EDITOR_MAX_LINES` at build
-  time to fit the target's RAM budget.
+- **Sizing**: file-backed editing uses fixed storage budgets controlled by
+  `EDITOR_EDIT_BYTES` (default 1024), `EDITOR_MAX_PIECES` (64),
+  `EDITOR_PAGE_CACHE_BYTES` (256), and `EDITOR_LINE_ANCHORS` (16). On a
+  32-bit target these arrays use about 2.1 KB, plus small document and file
+  handle structs. `EDITOR_MAX_BYTES` and `EDITOR_MAX_LINES` remain for the
+  legacy flat-buffer API and its tests.
+- **I/O behavior**: opening scans the file once to count lines and create
+  sparse anchors, but never stores the full file in RAM. Edits are volatile
+  and bounded by the edit-byte and piece budgets; no flash writes occur
+  until an explicit save. A dirty save streams the result to a temporary
+  file and renames it over the original, preserving discard behavior and
+  requiring temporary free space roughly equal to the edited file size.
+  Saving an unchanged file does not write flash.
 
 ### Building for nRF Connect SDK
 

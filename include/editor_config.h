@@ -8,7 +8,7 @@
 #ifndef EDITOR_CONFIG_H
 #define EDITOR_CONFIG_H
 
-/* Maximum file size held in RAM while editing (bytes). */
+/* Legacy flat-buffer limits used by the standalone core tests. */
 #ifndef EDITOR_MAX_BYTES
 #define EDITOR_MAX_BYTES        4096
 #endif
@@ -16,6 +16,23 @@
 /* Maximum number of lines tracked by the line index. */
 #ifndef EDITOR_MAX_LINES
 #define EDITOR_MAX_LINES        256
+#endif
+
+/* Fixed RAM budgets for file-backed editing. */
+#ifndef EDITOR_EDIT_BYTES
+#define EDITOR_EDIT_BYTES       1024
+#endif
+
+#ifndef EDITOR_MAX_PIECES
+#define EDITOR_MAX_PIECES       64
+#endif
+
+#ifndef EDITOR_PAGE_CACHE_BYTES
+#define EDITOR_PAGE_CACHE_BYTES 256
+#endif
+
+#ifndef EDITOR_LINE_ANCHORS
+#define EDITOR_LINE_ANCHORS     16
 #endif
 
 /* Default terminal size; safe fallbacks for serial consoles. */

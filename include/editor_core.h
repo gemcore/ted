@@ -11,6 +11,7 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include "editor_store.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,7 +21,8 @@ typedef enum {
     ED_OK = 0,          /* success */
     ED_FULL,            /* buffer or line index capacity reached */
     ED_RANGE,           /* argument outside the document */
-    ED_INVALID          /* invalid argument / not initialised */
+    ED_INVALID,         /* invalid argument / not initialised */
+    ED_IO               /* backing storage read failed */
 } ED_Result;
 
 typedef struct {
@@ -33,11 +35,13 @@ typedef struct {
     size_t   cur;         /* cursor as an absolute buffer index */
     size_t   goal_col;    /* remembered column for vertical movement */
     bool     dirty;       /* modified since last load/save */
+    ED_Store *store;      /* optional file-backed storage */
 } ED_Doc;
 
 /* Bind caller-provided storage and reset to an empty document. */
 void ED_init(ED_Doc *doc, char *buf, size_t buf_cap,
              size_t *lines, size_t lines_cap);
+void ED_init_store(ED_Doc *doc, ED_Store *store);
 
 /* Replace the document with the given bytes (line endings are
  * normalised: CRLF and lone CR become LF). */
@@ -45,6 +49,9 @@ ED_Result ED_set_text(ED_Doc *doc, const char *data, size_t len);
 
 /* Current document contents (bytes are in doc->buf, length returned). */
 size_t ED_get_text(const ED_Doc *doc);
+ED_Result ED_read_at(const ED_Doc *doc, size_t offset, char *dst, size_t len);
+ED_Result ED_line_bounds(const ED_Doc *doc, size_t row,
+                         size_t *start, size_t *len);
 
 /* Editing operations. All update the line index and the dirty flag. */
 ED_Result ED_insert_char(ED_Doc *doc, char ch);

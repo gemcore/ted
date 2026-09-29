@@ -12,6 +12,7 @@
 
 #define CAP   256
 #define LINES 16
+#define PIECES 64
 
 static char   out[16384];
 static size_t out_len;
@@ -42,6 +43,12 @@ static int loop_read(void *ctx)
 static TERM term;
 static char   buf[CAP];
 static size_t lines[LINES];
+static ED_Store store;
+static ED_StorePiece pieces[PIECES];
+static char added[EDITOR_EDIT_BYTES];
+static char cache[EDITOR_PAGE_CACHE_BYTES];
+static ED_StoreLineAnchor anchors[EDITOR_LINE_ANCHORS];
+static FS_LFS_File source_file;
 
 static void setup_script(const char *keys, size_t n)
 {
@@ -65,6 +72,31 @@ static void cfg_for(const char *path)
     cfg.lines_cap = LINES;
     cfg.term_rows = 10;
     cfg.term_cols = 40;
+    cfg.store = NULL;
+    cfg.pieces = NULL;
+    cfg.pieces_cap = 0;
+    cfg.added = NULL;
+    cfg.added_cap = 0;
+    cfg.cache = NULL;
+    cfg.cache_cap = 0;
+    cfg.anchors = NULL;
+    cfg.anchors_cap = 0;
+    cfg.source = NULL;
+}
+
+static void cfg_for_store(const char *path)
+{
+    cfg_for(path);
+    cfg.store = &store;
+    cfg.pieces = pieces;
+    cfg.pieces_cap = PIECES;
+    cfg.added = added;
+    cfg.added_cap = sizeof(added);
+    cfg.cache = cache;
+    cfg.cache_cap = sizeof(cache);
+    cfg.anchors = anchors;
+    cfg.anchors_cap = EDITOR_LINE_ANCHORS;
+    cfg.source = &source_file;
 }
 
 static void write_file(const char *path, const char *text)
@@ -94,7 +126,7 @@ static char *read_file(const char *path, char *dst, size_t cap)
 int main(void)
 {
     const char *path = "/tmp/ted_session_test.txt";
-    char filebuf[CAP];
+    char filebuf[512];
 
     /* Type "Hi", save, quit: file must contain the typed text. */
     remove(path);
@@ -146,6 +178,22 @@ int main(void)
         CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
         CHECK(strstr(out, "xxxx") != NULL);
         CHECK(strstr(out, "zzzz") == NULL);
+    }
+
+    /* File-backed sessions edit and save files larger than the old buffer. */
+    {
+        char large[CAP + 40];
+
+        memset(large, 'a', sizeof(large) - 1);
+        large[sizeof(large) - 1] = '\0';
+        write_file(path, large);
+        setup_script("\x1b[F" "X" "\x17\x18", 6);
+        cfg_for_store(path);
+        CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
+        CHECK(strlen(read_file(path, filebuf, sizeof(filebuf))) ==
+              sizeof(large) - 1);
+        CHECK(filebuf[sizeof(large) - 2] == 'X');
+        CHECK(filebuf[0] == 'a');
     }
 
     /* Input stream ending without Ctrl-X still exits cleanly. */

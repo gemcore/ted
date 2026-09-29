@@ -46,15 +46,24 @@ size_t EDV_text_cols(const ED_View *v)
 
 size_t EDV_display_col(const ED_Doc *doc, size_t row, size_t char_off)
 {
-    const char *text = ED_line_text(doc, row);
-    size_t len = ED_line_len(doc, row);
+    size_t len;
+    size_t start = 0;
     size_t i, col = 0;
+
+    if (ED_line_bounds(doc, row, &start, &len) != ED_OK) {
+        return 0;
+    }
 
     if (char_off > len) {
         char_off = len;
     }
     for (i = 0; i < char_off; i++) {
-        if (text[i] == '\t') {
+        char ch;
+
+        if (ED_read_at(doc, start + i, &ch, 1) != ED_OK) {
+            break;
+        }
+        if (ch == '\t') {
             col += EDITOR_TAB_WIDTH - (col % EDITOR_TAB_WIDTH);
         } else {
             col++;

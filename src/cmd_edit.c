@@ -11,9 +11,13 @@
 #include "editor_session.h"
 #include "cmd_edit.h"
 
-/* Static storage: the editor never allocates. */
-static char   s_buf[EDITOR_MAX_BYTES];
-static size_t s_lines[EDITOR_MAX_LINES];
+/* Static, bounded storage: the source file is never copied into RAM. */
+static ED_Store s_store;
+static ED_StorePiece s_pieces[EDITOR_MAX_PIECES];
+static char s_added[EDITOR_EDIT_BYTES];
+static char s_cache[EDITOR_PAGE_CACHE_BYTES];
+static ED_StoreLineAnchor s_anchors[EDITOR_LINE_ANCHORS];
+static FS_LFS_File s_source;
 
 int Cmd_edit(TERM *term, int argc, char *argv[])
 {
@@ -27,12 +31,22 @@ int Cmd_edit(TERM *term, int argc, char *argv[])
     cfg.path = (argc >= 2 && argv[1] != NULL && argv[1][0] != '\0') ?
                argv[1] : NULL;
     cfg.term = term;
-    cfg.buf = s_buf;
-    cfg.buf_cap = sizeof(s_buf);
-    cfg.lines = s_lines;
-    cfg.lines_cap = EDITOR_MAX_LINES;
+    cfg.buf = NULL;
+    cfg.buf_cap = 0;
+    cfg.lines = NULL;
+    cfg.lines_cap = 0;
     cfg.term_rows = EDITOR_TERM_ROWS;
     cfg.term_cols = EDITOR_TERM_COLS;
+    cfg.store = &s_store;
+    cfg.pieces = s_pieces;
+    cfg.pieces_cap = EDITOR_MAX_PIECES;
+    cfg.added = s_added;
+    cfg.added_cap = sizeof(s_added);
+    cfg.cache = s_cache;
+    cfg.cache_cap = sizeof(s_cache);
+    cfg.anchors = s_anchors;
+    cfg.anchors_cap = EDITOR_LINE_ANCHORS;
+    cfg.source = &s_source;
 
     rc = ED_Session_run(&cfg);
     switch (rc) {

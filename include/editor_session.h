@@ -13,6 +13,7 @@
 #include "editor_config.h"
 #include "editor_core.h"
 #include "editor_view.h"
+#include "fs_lfs.h"
 #include "term_vt100.h"
 
 #ifdef __cplusplus
@@ -35,6 +36,16 @@ typedef struct {
     size_t      lines_cap;
     size_t      term_rows;            /* terminal size, 0 = defaults */
     size_t      term_cols;
+    ED_Store   *store;                /* non-NULL selects file-backed mode */
+    ED_StorePiece *pieces;
+    size_t      pieces_cap;
+    char       *added;
+    size_t      added_cap;
+    char       *cache;
+    size_t      cache_cap;
+    ED_StoreLineAnchor *anchors;
+    size_t      anchors_cap;
+    FS_LFS_File *source;
 } ED_SessionConfig;
 
 /* Run the editor until the user quits. Blocks reading keys from

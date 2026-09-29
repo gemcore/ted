@@ -96,14 +96,67 @@ static bool prompt_line(TERM *t, const ED_View *v, const char *prompt,
     }
 }
 
-static const char *save_doc(ED_Doc *doc, TERM *t, const ED_View *v,
+static size_t store_read_at(void *ctx, size_t offset, char *dst, size_t len)
+{
+    return ED_Store_read((ED_Store *)ctx, offset, dst, len) == ED_STORE_OK ?
+           len : 0;
+}
+
+static bool reset_store(const ED_SessionConfig *cfg, ED_Doc *doc,
+                        const char *path)
+{
+    size_t cursor = doc->cur, row, col, source_len = 0;
+    FS_LFS_Result frc;
+
+    FS_LFS_close(cfg->source);
+    frc = FS_LFS_open_read(path, cfg->source);
+    if (frc == FS_LFS_OK) {
+        source_len = cfg->source->size;
+    } else if (frc != FS_LFS_NOT_FOUND) {
+        return false;
+    }
+    ED_Store_init(cfg->store, FS_LFS_read_at, cfg->source, source_len,
+                  cfg->pieces, cfg->pieces_cap, cfg->added, cfg->added_cap,
+                  cfg->cache, cfg->cache_cap, cfg->anchors, cfg->anchors_cap);
+    ED_init_store(doc, cfg->store);
+    if (cursor > doc->len) {
+        cursor = doc->len;
+    }
+    doc->cur = cursor;
+    (void)ED_Store_position_at(cfg->store, cursor, &row, &col);
+    doc->goal_col = col;
+    return true;
+}
+
+static const char *save_doc(const ED_SessionConfig *cfg, ED_Doc *doc,
+                            TERM *t, const ED_View *v,
                             char *path, size_t path_cap)
 {
+    char old_path[EDITOR_PATH_MAX];
+    bool source_was_open;
+
     if (path[0] == '\0' &&
         !prompt_line(t, v, "Write to: ", path, path_cap)) {
         return "cancelled";
     }
-    if (FS_LFS_save(path, doc->buf, ED_get_text(doc)) != FS_LFS_OK) {
+    if (doc->store != NULL) {
+        if (!ED_is_dirty(doc) && cfg->source->open &&
+            strcmp(path, cfg->source->path) == 0) {
+            return "unchanged";
+        }
+        source_was_open = cfg->source->open;
+        strcpy(old_path, cfg->source->path);
+        if (FS_LFS_save_stream(path, ED_get_text(doc), store_read_at,
+                               doc->store, cfg->source) != FS_LFS_OK) {
+            if (source_was_open && !cfg->source->open) {
+                (void)reset_store(cfg, doc, old_path);
+            }
+            return "save failed";
+        }
+        if (!reset_store(cfg, doc, path)) {
+            return "saved; reopen failed";
+        }
+    } else if (FS_LFS_save(path, doc->buf, ED_get_text(doc)) != FS_LFS_OK) {
         return "save failed";
     }
     ED_clear_dirty(doc);
@@ -112,14 +165,19 @@ static const char *save_doc(ED_Doc *doc, TERM *t, const ED_View *v,
 
 /* Apply one editing key. Returns the message to show in the status line
  * (or NULL) after the action. */
-static const char *apply_key(ED_Doc *doc, ED_View *view, TERM *term,
+static const char *apply_key(const ED_SessionConfig *cfg, ED_Doc *doc,
+                             ED_View *view, TERM *term,
                              const TERM_Key *key, char *path,
                              size_t path_cap, bool *quit)
 {
     switch (key->type) {
     case TERM_KEY_CHAR:
-        if (ED_insert_char(doc, key->ch) != ED_OK) {
-            return "buffer full";
+        {
+            ED_Result rc = ED_insert_char(doc, key->ch);
+
+            if (rc != ED_OK) {
+                return rc == ED_FULL ? "edit memory full" : "storage error";
+            }
         }
         break;
     case TERM_KEY_TAB: {
@@ -129,15 +187,21 @@ static const char *apply_key(ED_Doc *doc, ED_View *view, TERM *term,
         spaces = EDITOR_TAB_WIDTH - (EDV_display_col(doc, row, col) %
                                      EDITOR_TAB_WIDTH);
         for (i = 0; i < spaces; i++) {
-            if (ED_insert_char(doc, ' ') != ED_OK) {
-                return "buffer full";
+            ED_Result rc = ED_insert_char(doc, ' ');
+
+            if (rc != ED_OK) {
+                return rc == ED_FULL ? "edit memory full" : "storage error";
             }
         }
         break;
     }
     case TERM_KEY_ENTER:
-        if (ED_newline(doc) != ED_OK) {
-            return "buffer full";
+        {
+            ED_Result rc = ED_newline(doc);
+
+            if (rc != ED_OK) {
+                return rc == ED_FULL ? "edit memory full" : "storage error";
+            }
         }
         break;
     case TERM_KEY_BACKSPACE:   ED_backspace(doc);   break;
@@ -155,7 +219,7 @@ static const char *apply_key(ED_Doc *doc, ED_View *view, TERM *term,
         ED_move_page_down(doc, EDV_text_rows(view));
         break;
     case TERM_KEY_CTRL_W:
-        return save_doc(doc, term, view, path, path_cap);
+        return save_doc(cfg, doc, term, view, path, path_cap);
     case TERM_KEY_CTRL_X: {
         char ans[4];
         const char *m;
@@ -175,7 +239,7 @@ static const char *apply_key(ED_Doc *doc, ED_View *view, TERM *term,
         if (ans[0] != 'y' && ans[0] != 'Y') {
             return "cancelled";
         }
-        m = save_doc(doc, term, view, path, path_cap);
+        m = save_doc(cfg, doc, term, view, path, path_cap);
         if (strcmp(m, "saved") == 0) {
             *quit = true;
         }
@@ -202,8 +266,12 @@ ED_SessionResult ED_Session_run(const ED_SessionConfig *cfg)
     FS_LFS_Result frc;
 
     if (cfg == NULL || cfg->term == NULL ||
-        cfg->buf == NULL || cfg->lines == NULL || cfg->buf_cap == 0 ||
-        cfg->lines_cap == 0) {
+          (cfg->store == NULL &&
+            (cfg->buf == NULL || cfg->lines == NULL || cfg->buf_cap == 0 ||
+             cfg->lines_cap == 0)) ||
+          (cfg->store != NULL &&
+            (cfg->pieces == NULL || cfg->pieces_cap == 0 || cfg->added == NULL ||
+             cfg->cache == NULL || cfg->cache_cap == 0 || cfg->source == NULL))) {
         return ED_SESSION_ARG_ERROR;
     }
     path[0] = '\0';
@@ -214,26 +282,46 @@ ED_SessionResult ED_Session_run(const ED_SessionConfig *cfg)
         strcpy(path, cfg->path);
     }
 
-    ED_init(&doc, cfg->buf, cfg->buf_cap, cfg->lines, cfg->lines_cap);
     EDV_init(&view, cfg->term_rows, cfg->term_cols);
 
-    frc = (path[0] != '\0') ?
-          FS_LFS_load(path, cfg->buf, cfg->buf_cap, &loaded_len) :
-          FS_LFS_NOT_FOUND;
-    switch (frc) {
-    case FS_LFS_OK:
-        ED_set_text(&doc, cfg->buf, loaded_len);
-        break;
-    case FS_LFS_NOT_FOUND:
-        ED_set_text(&doc, NULL, 0);     /* start a new, empty file */
-        msg = "new file";
-        break;
-    case FS_LFS_TOO_LARGE:
-        msg = "file truncated";         /* buffer holds what fits */
-        ED_set_text(&doc, cfg->buf, loaded_len);
-        break;
-    default:
-        return ED_SESSION_IO_ERROR;
+    if (cfg->store != NULL) {
+        size_t source_len = 0;
+
+        FS_LFS_close(cfg->source);
+        frc = (path[0] != '\0') ? FS_LFS_open_read(path, cfg->source) :
+                                   FS_LFS_NOT_FOUND;
+        if (frc == FS_LFS_OK) {
+            source_len = cfg->source->size;
+        } else if (frc == FS_LFS_NOT_FOUND) {
+            msg = "new file";
+        } else {
+            return ED_SESSION_IO_ERROR;
+        }
+        ED_Store_init(cfg->store, FS_LFS_read_at, cfg->source, source_len,
+                      cfg->pieces, cfg->pieces_cap, cfg->added,
+                      cfg->added_cap, cfg->cache, cfg->cache_cap,
+                      cfg->anchors, cfg->anchors_cap);
+        ED_init_store(&doc, cfg->store);
+    } else {
+        ED_init(&doc, cfg->buf, cfg->buf_cap, cfg->lines, cfg->lines_cap);
+        frc = (path[0] != '\0') ?
+              FS_LFS_load(path, cfg->buf, cfg->buf_cap, &loaded_len) :
+              FS_LFS_NOT_FOUND;
+        switch (frc) {
+        case FS_LFS_OK:
+            ED_set_text(&doc, cfg->buf, loaded_len);
+            break;
+        case FS_LFS_NOT_FOUND:
+            ED_set_text(&doc, NULL, 0);
+            msg = "new file";
+            break;
+        case FS_LFS_TOO_LARGE:
+            msg = "file truncated";
+            ED_set_text(&doc, cfg->buf, loaded_len);
+            break;
+        default:
+            return ED_SESSION_IO_ERROR;
+        }
     }
 
     TERM_enter(cfg->term);
@@ -258,11 +346,14 @@ ED_SessionResult ED_Session_run(const ED_SessionConfig *cfg)
             continue;
         }
         full_redraw = !is_motion_key(key.type);
-        msg = apply_key(&doc, &view, cfg->term, &key, path, sizeof(path),
-                        &quit);
+        msg = apply_key(cfg, &doc, &view, cfg->term, &key, path,
+                sizeof(path), &quit);
     }
 
     TERM_exit(cfg->term);
+    if (cfg->store != NULL) {
+        FS_LFS_close(cfg->source);
+    }
 
     return ED_is_dirty(&doc) ? ED_SESSION_DISCARDED : ED_SESSION_OK;
 }

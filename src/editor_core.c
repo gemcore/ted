@@ -12,13 +12,46 @@
 
 static bool ed_valid(const ED_Doc *doc)
 {
-    return doc != NULL && doc->buf != NULL && doc->lines != NULL &&
-           doc->lines_cap > 0;
+    return doc != NULL &&
+           (doc->store != NULL ||
+            (doc->buf != NULL && doc->lines != NULL && doc->lines_cap > 0));
+}
+
+static size_t ed_doc_len(const ED_Doc *doc)
+{
+    return doc->store != NULL ? ED_Store_length(doc->store) : doc->len;
+}
+
+static size_t ed_doc_lines(const ED_Doc *doc)
+{
+    return doc->store != NULL ? ED_Store_line_count(doc->store) :
+                                doc->line_count;
+}
+
+static ED_Result ed_read_byte(const ED_Doc *doc, size_t offset, char *ch)
+{
+    if (doc->store != NULL) {
+        ED_StoreResult rc = ED_Store_read(doc->store, offset, ch, 1);
+
+        return rc == ED_STORE_OK ? ED_OK :
+               rc == ED_STORE_IO ? ED_IO : ED_RANGE;
+    }
+    if (offset >= doc->len) {
+        return ED_RANGE;
+    }
+    *ch = doc->buf[offset];
+    return ED_OK;
 }
 
 /* Byte offset where line row starts. */
 static size_t ed_line_start(const ED_Doc *doc, size_t row)
 {
+    if (doc->store != NULL) {
+        size_t start = doc->len, len;
+
+        (void)ED_Store_line_bounds(doc->store, row, &start, &len);
+        return start;
+    }
     return (row < doc->line_count) ? doc->lines[row] : doc->len;
 }
 
@@ -28,6 +61,15 @@ static size_t ed_line_end(const ED_Doc *doc, size_t row)
     size_t start = ed_line_start(doc, row);
     size_t end;
 
+    if (doc->store != NULL) {
+        size_t len;
+
+        if (ED_Store_line_bounds(doc->store, row, &start, &len) !=
+            ED_STORE_OK) {
+            return start;
+        }
+        return start + len;
+    }
     if (row + 1 < doc->line_count) {
         end = doc->lines[row + 1];
         if (end > start && doc->buf[end - 1] == '\n') {
@@ -43,6 +85,12 @@ static size_t ed_cur_row(const ED_Doc *doc)
 {
     size_t row = 0;
 
+    if (doc->store != NULL) {
+        size_t col;
+
+        (void)ED_Store_position_at(doc->store, doc->cur, &row, &col);
+        return row;
+    }
     while (row + 1 < doc->line_count && doc->lines[row + 1] <= doc->cur) {
         row++;
     }
@@ -67,6 +115,24 @@ static ED_Result ed_insert(ED_Doc *doc, const char *data, size_t n)
 
     if (!ed_valid(doc) || (data == NULL && n > 0)) {
         return ED_INVALID;
+    }
+    if (doc->store != NULL) {
+        ED_StoreResult rc = ED_Store_insert(doc->store, doc->cur, data, n);
+
+        if (rc == ED_STORE_FULL) {
+            return ED_FULL;
+        }
+        if (rc == ED_STORE_IO) {
+            return ED_IO;
+        }
+        if (rc != ED_STORE_OK) {
+            return ED_INVALID;
+        }
+        doc->len = ED_Store_length(doc->store);
+        doc->line_count = ED_Store_line_count(doc->store);
+        doc->cur += n;
+        doc->dirty = n > 0 || doc->dirty;
+        return ED_OK;
     }
     for (i = 0; i < n; i++) {
         if (data[i] == '\n') {
@@ -123,6 +189,21 @@ static ED_Result ed_delete_at(ED_Doc *doc, size_t cur, size_t n)
     if (!ed_valid(doc) || n == 0 || cur >= doc->len) {
         return ED_RANGE;
     }
+    if (doc->store != NULL) {
+        ED_StoreResult rc = ED_Store_delete(doc->store, cur, n);
+
+        if (rc == ED_STORE_IO) {
+            return ED_IO;
+        }
+        if (rc != ED_STORE_OK) {
+            return rc == ED_STORE_FULL ? ED_FULL : ED_RANGE;
+        }
+        doc->len = ED_Store_length(doc->store);
+        doc->line_count = ED_Store_line_count(doc->store);
+        doc->cur = cur;
+        doc->dirty = true;
+        return ED_OK;
+    }
     if (cur + n > doc->len) {
         n = doc->len - cur;
     }
@@ -166,13 +247,31 @@ void ED_init(ED_Doc *doc, char *buf, size_t buf_cap,
     doc->cur = 0;
     doc->goal_col = 0;
     doc->dirty = false;
+    doc->store = NULL;
+}
+
+void ED_init_store(ED_Doc *doc, ED_Store *store)
+{
+    if (doc == NULL || store == NULL) {
+        return;
+    }
+    doc->buf = NULL;
+    doc->buf_cap = 0;
+    doc->len = ED_Store_length(store);
+    doc->lines = NULL;
+    doc->lines_cap = 0;
+    doc->line_count = ED_Store_line_count(store);
+    doc->cur = 0;
+    doc->goal_col = 0;
+    doc->dirty = false;
+    doc->store = store;
 }
 
 ED_Result ED_set_text(ED_Doc *doc, const char *data, size_t len)
 {
     size_t i, out = 0;
 
-    if (!ed_valid(doc) || (data == NULL && len > 0)) {
+    if (!ed_valid(doc) || doc->store != NULL || (data == NULL && len > 0)) {
         return ED_INVALID;
     }
 
@@ -212,7 +311,43 @@ ED_Result ED_set_text(ED_Doc *doc, const char *data, size_t len)
 
 size_t ED_get_text(const ED_Doc *doc)
 {
-    return ed_valid(doc) ? doc->len : 0;
+    return ed_valid(doc) ? ed_doc_len(doc) : 0;
+}
+
+ED_Result ED_read_at(const ED_Doc *doc, size_t offset, char *dst, size_t len)
+{
+    if (!ed_valid(doc) || (dst == NULL && len > 0) ||
+        offset > ed_doc_len(doc) || len > ed_doc_len(doc) - offset) {
+        return ED_RANGE;
+    }
+    if (doc->store != NULL) {
+        ED_StoreResult rc = ED_Store_read(doc->store, offset, dst, len);
+
+        return rc == ED_STORE_OK ? ED_OK :
+               rc == ED_STORE_IO ? ED_IO : ED_RANGE;
+    }
+    if (len > 0) {
+        memcpy(dst, doc->buf + offset, len);
+    }
+    return ED_OK;
+}
+
+ED_Result ED_line_bounds(const ED_Doc *doc, size_t row,
+                         size_t *start, size_t *len)
+{
+    if (!ed_valid(doc) || start == NULL || len == NULL ||
+        row >= ed_doc_lines(doc)) {
+        return ED_RANGE;
+    }
+    if (doc->store != NULL) {
+        ED_StoreResult rc = ED_Store_line_bounds(doc->store, row, start, len);
+
+        return rc == ED_STORE_OK ? ED_OK :
+               rc == ED_STORE_IO ? ED_IO : ED_RANGE;
+    }
+    *start = ed_line_start(doc, row);
+    *len = ed_line_end(doc, row) - *start;
+    return ED_OK;
 }
 
 ED_Result ED_insert_char(ED_Doc *doc, char ch)
@@ -244,24 +379,46 @@ ED_Result ED_newline(ED_Doc *doc)
 
 ED_Result ED_backspace(ED_Doc *doc)
 {
+    size_t remove = 1;
+
     if (!ed_valid(doc)) {
         return ED_INVALID;
     }
     if (doc->cur == 0) {
         return ED_RANGE;
     }
-    return ed_delete_at(doc, doc->cur - 1, 1);
+    if (doc->store != NULL && doc->cur >= 2) {
+        char before, last;
+
+        if (ed_read_byte(doc, doc->cur - 2, &before) == ED_OK &&
+            ed_read_byte(doc, doc->cur - 1, &last) == ED_OK &&
+            before == '\r' && last == '\n') {
+            remove = 2;
+        }
+    }
+    return ed_delete_at(doc, doc->cur - remove, remove);
 }
 
 ED_Result ED_delete(ED_Doc *doc)
 {
+    size_t remove = 1;
+
     if (!ed_valid(doc)) {
         return ED_INVALID;
     }
     if (doc->cur >= doc->len) {
         return ED_RANGE;
     }
-    return ed_delete_at(doc, doc->cur, 1);
+    if (doc->store != NULL && doc->cur + 1 < doc->len) {
+        char current, next;
+
+        if (ed_read_byte(doc, doc->cur, &current) == ED_OK &&
+            ed_read_byte(doc, doc->cur + 1, &next) == ED_OK &&
+            current == '\r' && next == '\n') {
+            remove = 2;
+        }
+    }
+    return ed_delete_at(doc, doc->cur, remove);
 }
 
 void ED_get_cursor(const ED_Doc *doc, size_t *row, size_t *col)
@@ -274,6 +431,13 @@ void ED_get_cursor(const ED_Doc *doc, size_t *row, size_t *col)
         }
         if (col != NULL) {
             *col = 0;
+        }
+        return;
+    }
+    if (doc->store != NULL) {
+        (void)ED_Store_position_at(doc->store, doc->cur, &r, col);
+        if (row != NULL) {
+            *row = r;
         }
         return;
     }
@@ -312,7 +476,19 @@ void ED_move_left(ED_Doc *doc)
     if (!ed_valid(doc) || doc->cur == 0) {
         return;
     }
-    doc->cur--;
+    if (doc->store != NULL && doc->cur >= 2) {
+        char before, last;
+
+        if (ed_read_byte(doc, doc->cur - 2, &before) == ED_OK &&
+            ed_read_byte(doc, doc->cur - 1, &last) == ED_OK &&
+            before == '\r' && last == '\n') {
+            doc->cur -= 2;
+        } else {
+            doc->cur--;
+        }
+    } else {
+        doc->cur--;
+    }
     doc->goal_col = doc->cur - ed_line_start(doc, ed_cur_row(doc));
 }
 
@@ -321,7 +497,19 @@ void ED_move_right(ED_Doc *doc)
     if (!ed_valid(doc) || doc->cur >= doc->len) {
         return;
     }
-    doc->cur++;
+    if (doc->store != NULL && doc->cur + 1 < doc->len) {
+        char current, next;
+
+        if (ed_read_byte(doc, doc->cur, &current) == ED_OK &&
+            ed_read_byte(doc, doc->cur + 1, &next) == ED_OK &&
+            current == '\r' && next == '\n') {
+            doc->cur += 2;
+        } else {
+            doc->cur++;
+        }
+    } else {
+        doc->cur++;
+    }
     doc->goal_col = doc->cur - ed_line_start(doc, ed_cur_row(doc));
 }
 
@@ -389,20 +577,26 @@ void ED_move_page_down(ED_Doc *doc, size_t page_rows)
 
 size_t ED_line_count(const ED_Doc *doc)
 {
-    return ed_valid(doc) ? doc->line_count : 0;
+    return ed_valid(doc) ? ed_doc_lines(doc) : 0;
 }
 
 size_t ED_line_len(const ED_Doc *doc, size_t row)
 {
-    if (!ed_valid(doc) || row >= doc->line_count) {
+    if (!ed_valid(doc) || row >= ed_doc_lines(doc)) {
         return 0;
+    }
+    if (doc->store != NULL) {
+        size_t start, len;
+
+        return ED_Store_line_bounds(doc->store, row, &start, &len) ==
+               ED_STORE_OK ? len : 0;
     }
     return ed_line_end(doc, row) - ed_line_start(doc, row);
 }
 
 const char *ED_line_text(const ED_Doc *doc, size_t row)
 {
-    if (!ed_valid(doc) || row >= doc->line_count) {
+    if (!ed_valid(doc) || row >= ed_doc_lines(doc) || doc->store != NULL) {
         return "";
     }
     return doc->buf + ed_line_start(doc, row);

@@ -156,12 +156,19 @@ void TERM_render(TERM *t, const ED_Doc *doc, const ED_View *view,
 
         TERM_clear_line(t);
         if (drow < last) {
-            const char *text = ED_line_text(doc, drow);
-            size_t len = ED_line_len(doc, drow);
+            size_t start, len;
             size_t i, disp = 0, shown = 0;
 
+            if (ED_line_bounds(doc, drow, &start, &len) != ED_OK) {
+                len = 0;
+                start = 0;
+            }
             for (i = 0; i < len && shown < cols; i++) {
-                char ch = text[i];
+                char ch;
+
+                if (ED_read_at(doc, start + i, &ch, 1) != ED_OK) {
+                    break;
+                }
 
                 if (ch == '\t') {
                     size_t next = disp + EDITOR_TAB_WIDTH -
