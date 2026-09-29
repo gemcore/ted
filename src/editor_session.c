@@ -9,7 +9,7 @@
  *   Home/End         line start/end PgUp/PgDn  move by a page
  *   Ctrl-W           write          Ctrl-X     exit
  * Without a file name, Ctrl-W asks for one; Ctrl-X with unsaved changes
- * asks whether to save. An empty answer cancels.
+ * asks whether to save. Ctrl-C cancels a prompt.
  */
 #include <stdio.h>
 #include <string.h>
@@ -50,7 +50,7 @@ static bool is_motion_key(TERM_KeyType type)
     }
 }
 
-/* Read a line on the status row. Empty Enter cancels. */
+/* Read a line on the status row. Ctrl-C cancels; empty Enter is ignored. */
 static bool prompt_line(TERM *t, const ED_View *v, const char *prompt,
                         char *out, size_t cap)
 {
@@ -72,8 +72,13 @@ static bool prompt_line(TERM *t, const ED_View *v, const char *prompt,
             return false;
         }
         switch (key.type) {
+        case TERM_KEY_CTRL_C:
+            return false;
         case TERM_KEY_ENTER:
-            return len > 0;
+            if (len > 0) {
+                return true;
+            }
+            break;
         case TERM_KEY_BACKSPACE:
             if (len > 0) {
                 out[--len] = '\0';

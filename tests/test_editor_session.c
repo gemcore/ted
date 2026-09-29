@@ -176,16 +176,17 @@ int main(void)
         CHECK(strstr(out, "Write to: ") != NULL);
     }
 
-    /* Exit with changes: empty answer cancels, 'y' saves and exits. */
+    /* Exit with changes: Ctrl-C cancels, 'y' saves and exits. */
     write_file(path, "a");
-    setup_script("b\x18\r\x18y\r", 6);
+    setup_script("b\x18\x03\x18y\r", 6);
     cfg_for(path);
     CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
     CHECK_STR(read_file(path, filebuf, sizeof(filebuf)), "ba");
 
-    /* Unnamed buffer: 'y' on exit asks for a name; empty name cancels. */
+    /* Unnamed buffer: 'y' on exit asks for a name; empty Enter is ignored,
+     * Ctrl-C cancels. */
     remove(path);
-    setup_script("Q\x18y\r\r", 5);
+    setup_script("Q\x18y\r\r\x03", 6);
     cfg_for(NULL);
     CHECK(ED_Session_run(&cfg) == ED_SESSION_DISCARDED);
     CHECK(read_file(path, filebuf, sizeof(filebuf))[0] == '\0');

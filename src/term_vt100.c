@@ -341,6 +341,9 @@ bool TERM_feed_byte(TERM *t, int byte, TERM_Key *key)
     case 0x18:  /* Ctrl-X */
         key_simple(key, TERM_KEY_CTRL_X);
         return true;
+    case 0x03:  /* Ctrl-C */
+        key_simple(key, TERM_KEY_CTRL_C);
+        return true;
     default:
         if (byte >= 32 && byte <= 126) {
             key->type = TERM_KEY_CHAR;

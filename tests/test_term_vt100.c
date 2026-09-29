@@ -123,6 +123,7 @@ int main(void)
     test_single_key(TERM_KEY_TAB, "\t", 1);
     test_single_key(TERM_KEY_CTRL_W, "\x17", 1);
     test_single_key(TERM_KEY_CTRL_X, "\x18", 1);
+    test_single_key(TERM_KEY_CTRL_C, "\x03", 1);
 
     /* CSI cursor keys. */
     test_single_key(TERM_KEY_UP, "\x1b[A", 3);

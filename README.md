@@ -50,7 +50,7 @@ Data flow:
 | Ctrl-W         | write (asks for a name if none) |
 | Ctrl-X         | exit (asks to save if modified) |
 
-At a prompt, an empty Enter cancels.
+At a prompt, Ctrl-C cancels.
 
 **Terminal settings:** use an Xterm (or VT220) emulation. Plain VT100
 emulation has no Home/End keys, so terminals such as SecureCRT send nothing
