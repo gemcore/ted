@@ -56,6 +56,11 @@ At a prompt, an empty Enter cancels.
 emulation has no Home/End keys, so terminals such as SecureCRT send nothing
 for them in that mode. Write/exit use Ctrl-W/Ctrl-X so they are not swallowed by XON/XOFF flow control.
 
+**Terminal settings:** use an Xterm (or VT220) emulation. Plain VT100
+emulation has no Home/End keys, so terminals such as SecureCRT send nothing
+for them in that mode. Also disable XON/XOFF flow control, otherwise the
+terminal swallows Ctrl-S and Ctrl-Q.
+
 ## Zephyr porting
 
 The modules are organized so a Zephyr port only has to provide the edges:
