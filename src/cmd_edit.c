@@ -1,5 +1,5 @@
 /*
- * cmd_edit.c - Shell command entry point:  edit <file>
+ * cmd_edit.c - Shell command entry point:  edit [file]
  *
  * Owns the static editor storage (sized by editor_config.h) and starts an
  * editing session on the caller's terminal. Under Zephyr the `edit`
@@ -20,12 +20,12 @@ int Cmd_edit(TERM *term, int argc, char *argv[])
     ED_SessionConfig cfg;
     ED_SessionResult rc;
 
-    if (term == NULL || argc < 2 || argv == NULL || argv[1] == NULL ||
-        argv[1][0] == '\0') {
+    if (term == NULL || argv == NULL) {
         return -1;
     }
 
-    cfg.path = argv[1];
+    cfg.path = (argc >= 2 && argv[1] != NULL && argv[1][0] != '\0') ?
+               argv[1] : NULL;
     cfg.term = term;
     cfg.buf = s_buf;
     cfg.buf_cap = sizeof(s_buf);
@@ -58,10 +58,6 @@ int Cmd_edit(TERM *term, int argc, char *argv[])
 
 #ifndef EDITOR_THREAD_PRIORITY
 #define EDITOR_THREAD_PRIORITY   K_LOWEST_APPLICATION_THREAD_PRIO
-#endif
-
-#ifndef EDITOR_PATH_MAX
-#define EDITOR_PATH_MAX          64
 #endif
 
 #ifndef EDITOR_RX_QUEUE_LEN
@@ -118,7 +114,7 @@ static void editor_thread(void *p1, void *p2, void *p3)
     ARG_UNUSED(p3);
 
     TERM_init(&term, zephyr_term_write, zephyr_term_read, (void *)sh);
-    rc = Cmd_edit(&term, 2, argv);
+    rc = Cmd_edit(&term, s_path[0] != '\0' ? 2 : 1, argv);
 
     shell_set_bypass(sh, NULL);
     if (rc != 0) {
@@ -129,11 +125,9 @@ static void editor_thread(void *p1, void *p2, void *p3)
 
 static int cmd_edit_zephyr(const struct shell *sh, size_t argc, char **argv)
 {
-    if (argc < 2) {
-        shell_error(sh, "usage: edit <file>");
-        return -EINVAL;
-    }
-    if (strlen(argv[1]) >= sizeof(s_path)) {
+    const char *name = (argc >= 2) ? argv[1] : "";
+
+    if (strlen(name) >= sizeof(s_path)) {
         shell_error(sh, "edit: path too long");
         return -ENAMETOOLONG;
     }
@@ -142,7 +136,7 @@ static int cmd_edit_zephyr(const struct shell *sh, size_t argc, char **argv)
         return -EBUSY;
     }
 
-    strcpy(s_path, argv[1]);
+    strcpy(s_path, name);
     s_shell = sh;
     k_msgq_purge(&s_rx_q);
     shell_set_bypass(sh, editor_bypass);
@@ -155,7 +149,7 @@ static int cmd_edit_zephyr(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
-SHELL_CMD_ARG_REGISTER(edit, NULL, "edit a file: edit <file>",
-                       cmd_edit_zephyr, 2, 0);
+SHELL_CMD_ARG_REGISTER(edit, NULL, "edit a file: edit [file]",
+                       cmd_edit_zephyr, 1, 1);
 
 #endif /* __ZEPHYR__ */

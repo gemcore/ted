@@ -24,7 +24,7 @@ include/  src/
                       under __ZEPHYR__, stdio on host builds.
   editor_session.[ch] Event loop tying core/view/terminal/fs together:
                       load, draw, read key, apply action, save, quit.
-  cmd_edit.[ch]       Shell command entry point: `edit <file>`.
+  cmd_edit.[ch]       Shell command entry point: `edit [file]`.
 ```
 
 Data flow:
@@ -47,8 +47,10 @@ Data flow:
 | Arrows         | move cursor             |
 | Home/End       | line start/end          |
 | PgUp/PgDn      | move by a page          |
-| Ctrl-W         | write to file           | 
-| Ctrl-X         | exit                    |
+| Ctrl-W         | write (asks for a name if none) |
+| Ctrl-X         | exit (asks to save if modified) |
+
+At a prompt, an empty Enter cancels.
 
 **Terminal settings:** use an Xterm (or VT220) emulation. Plain VT100
 emulation has no Home/End keys, so terminals such as SecureCRT send nothing

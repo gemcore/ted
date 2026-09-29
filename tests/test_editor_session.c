@@ -105,7 +105,7 @@ int main(void)
 
     /* Quit without saving discards changes. */
     write_file(path, "keep");
-    setup_script("X\x18", 2);
+    setup_script("X\x18n\r", 4);
     cfg_for(path);
     CHECK(ED_Session_run(&cfg) == ED_SESSION_DISCARDED);
     CHECK_STR(read_file(path, filebuf, sizeof(filebuf)), "keep");
@@ -163,6 +163,32 @@ int main(void)
         bad.buf = NULL;
         CHECK(ED_Session_run(&bad) == ED_SESSION_ARG_ERROR);
     }
+
+    /* Unnamed buffer: Ctrl-W asks for a name, then saves there. */
+    remove(path);
+    {
+        static const char keys[] = "Hi\x17/tmp/ted_session_test.txt\r\x18";
+
+        setup_script(keys, sizeof(keys) - 1);
+        cfg_for(NULL);
+        CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
+        CHECK_STR(read_file(path, filebuf, sizeof(filebuf)), "Hi");
+        CHECK(strstr(out, "Write to: ") != NULL);
+    }
+
+    /* Exit with changes: empty answer cancels, 'y' saves and exits. */
+    write_file(path, "a");
+    setup_script("b\x18\r\x18y\r", 6);
+    cfg_for(path);
+    CHECK(ED_Session_run(&cfg) == ED_SESSION_OK);
+    CHECK_STR(read_file(path, filebuf, sizeof(filebuf)), "ba");
+
+    /* Unnamed buffer: 'y' on exit asks for a name; empty name cancels. */
+    remove(path);
+    setup_script("Q\x18y\r\r", 5);
+    cfg_for(NULL);
+    CHECK(ED_Session_run(&cfg) == ED_SESSION_DISCARDED);
+    CHECK(read_file(path, filebuf, sizeof(filebuf))[0] == '\0');
 
     remove(path);
     TEST_SUMMARY();

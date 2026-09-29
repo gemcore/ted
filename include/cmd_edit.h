@@ -1,7 +1,7 @@
 /*
  * cmd_edit.h - Shell command entry point for the editor.
  *
- * Usage: edit <file>
+ * Usage: edit [file]
  *
  * The command owns static editor storage sized by editor_config.h and
  * launches an editor session on the shell's terminal. On Zephyr the
@@ -20,7 +20,8 @@
 extern "C" {
 #endif
 
-/* Execute the edit command. argv[1] must be the file path.
+/* Execute the edit command. argv[1] is the optional file path; without
+ * it the user is asked for a name on write.
  * Returns 0 on success, negative on error. */
 int Cmd_edit(TERM *term, int argc, char *argv[]);
 
